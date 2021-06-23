@@ -1,14 +1,13 @@
 ﻿using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Threading;
 
 namespace Objects
 {
     public class TaskScheduler:IJobExecutor
     {
-        private Thread _startThread;
-        private Thread _stopThread;
-        private Thread _threadThatMakesTheMainThreadWait;
+        private WaitHandle[] _taskEndedEvents;
 
         private volatile bool _isQueueProcessingComplete;
         private volatile bool _isAllProcessingComplete;
@@ -36,22 +35,52 @@ namespace Objects
                 throw new ArgumentOutOfRangeException(nameof(maxConcurrent));
             }
 
-            InitializeStartThread(maxConcurrent);
-            InitializeThreadThatMakesTheMainThreadWait();
+            //Thread startThread = new Thread(() =>
+            //{
+                _isQueueProcessingComplete = false;
 
-            _startThread.Start();
-            _threadThatMakesTheMainThreadWait.Start();
-        }
+                int freeSpace = maxConcurrent - RunningTasksCount;
+                SendingMaximumTasksForExecution(freeSpace);
+
+                while (!_isQueueProcessingComplete && !WaitHandle.WaitAll(_taskEndedEvents))
+                {
+                    freeSpace = WaitSomeMillisecondsAndGetFreeSpaceInRunningTasks(RefreshTimeout,
+                        maxConcurrent);
+                    if (freeSpace > 0)
+                        SendingMaximumTasksForExecution(freeSpace);
+                }
+            //});
+    }
 
         public void Stop()
         {
-            InitializeStopThread();
-            _stopThread.Start();
+            _isQueueProcessingComplete = true;
+
+            while (RunningTasksCount != 0)
+            {
+                Thread.Sleep(RefreshTimeout);
+            }
+
+            if (_queueIsEmpty) return;
+            Thread.Sleep(StopDefaultTimeout);
+            if (_isQueueProcessingComplete)
+                _isAllProcessingComplete = true;
         }
 
         public void Add(Action action)
         {
             if (action == null) throw new ArgumentNullException();
+
+            if (Amount == 0)
+                _taskEndedEvents = new WaitHandle[1] {new ManualResetEvent(false)};
+            else
+            {
+                var taskEndedList = _taskEndedEvents;
+                _taskEndedEvents = new WaitHandle[Amount + 1];
+                taskEndedList.CopyTo(_taskEndedEvents,0);
+                _taskEndedEvents[Amount] = new ManualResetEvent(false);
+            }
+
             _queueActions.Enqueue(action);
             _queueIsEmpty = false;
         }
@@ -67,64 +96,6 @@ namespace Objects
             }
         }
 
-        public void LetTheSchedulerFinishCurrentSession()
-        {
-            _threadThatMakesTheMainThreadWait.Join();
-        }
-
-        private void InitializeStartThread(int maxConcurrent)
-        {
-            _startThread = new Thread(() =>
-            {
-                _isQueueProcessingComplete = false;
-
-                int freeSpace = maxConcurrent - RunningTasksCount;
-                SendingMaximumTasksForExecution(freeSpace);
-
-                while (!_isQueueProcessingComplete)
-                {
-                    freeSpace = WaitSomeMillisecondsAndGetFreeSpaceInRunningTasks(RefreshTimeout, 
-                        maxConcurrent);
-                    if (freeSpace > 0)
-                        SendingMaximumTasksForExecution(freeSpace);
-                }
-
-                if (_queueIsEmpty && RunningTasksCount == 0)
-                    _isAllProcessingComplete = true;
-            });
-        }
-
-        private void InitializeStopThread()
-        {
-            _stopThread = new Thread(() =>
-            {
-                _isQueueProcessingComplete = true;
-
-                while (RunningTasksCount != 0)
-                {
-                    Thread.Sleep(RefreshTimeout);
-                }
-
-                if(_queueIsEmpty) return;
-                Thread.Sleep(StopDefaultTimeout);
-                if (_isQueueProcessingComplete)
-                    _isAllProcessingComplete = true;
-            });
-        }
-
-        private void InitializeThreadThatMakesTheMainThreadWait()
-        {
-            _threadThatMakesTheMainThreadWait = new Thread(() =>
-            {
-                while (!_isAllProcessingComplete)
-                {
-                    if (_queueIsEmpty && RunningTasksCount == 0)
-                        _isAllProcessingComplete = true;
-
-                    Thread.Sleep(RefreshTimeout);
-                }
-            });
-        }
 
         private void SendingMaximumTasksForExecution(int freeSpace)
         {
@@ -149,6 +120,7 @@ namespace Objects
 
             ThreadPool.QueueUserWorkItem(state =>
             {
+                ManualResetEvent endOfTheTaskEvent = (ManualResetEvent)state;
                 var id = Guid.NewGuid();
                 _queueActions.TryDequeue(out var action);
                 _runningTasks[id] = action;
@@ -160,6 +132,7 @@ namespace Objects
                 finally
                 {
                     _runningTasks.TryRemove(id, out _);
+                    endOfTheTaskEvent.Set();
                 }
             });
         }

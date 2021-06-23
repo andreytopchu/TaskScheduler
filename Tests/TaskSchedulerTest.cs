@@ -11,6 +11,7 @@ namespace Tests
     {
         public delegate void TaskForTaskScheduler();
 
+
         public TaskScheduler GetTaskScheduler(int numberOfTasks, TaskForTaskScheduler task)
         {
             var taskScheduler = new TaskScheduler();
@@ -36,12 +37,11 @@ namespace Tests
         [TestMethod]
         public void TaskSchedulerSuccessWorkTest()
         {
-            var taskScheduler = GetTaskScheduler(35, PrintRandomNumberAndSleepOneSecond);
+            var taskScheduler = GetTaskScheduler(25, PrintRandomNumberAndSleepOneSecond);
 
-            var threadsCount = 4;
+            var threadsCount = 3;
             taskScheduler.Start(threadsCount);
 
-            taskScheduler.LetTheSchedulerFinishCurrentSession();
             Assert.AreEqual(0, taskScheduler.RunningTasksCount);
         }
 
@@ -49,13 +49,12 @@ namespace Tests
         public void SuccessfulParallelOperationOfTheTaskSchedulerTest()
         {
             var timer = new Stopwatch();
-            var taskScheduler = GetTaskScheduler(8, PrintRandomNumberAndSleepOneSecond);
+            var taskScheduler = GetTaskScheduler(6, PrintRandomNumberAndSleepOneSecond);
 
-            var threadsCount = 4;
+            var threadsCount = 3;
 
             timer.Start();
             taskScheduler.Start(threadsCount);
-            taskScheduler.LetTheSchedulerFinishCurrentSession();
             timer.Stop();
 
             Console.WriteLine("Задачи выполнены за " + timer.ElapsedMilliseconds);
@@ -74,9 +73,9 @@ namespace Tests
             
             taskScheduler.Start(threadsCount);
             Thread.Sleep(3000);
-
+            int amount = taskScheduler.Amount;
             taskScheduler.Stop();
-            taskScheduler.LetTheSchedulerFinishCurrentSession();
+
 
             Assert.AreEqual(0, taskScheduler.RunningTasksCount);
             Assert.AreEqual(7, taskScheduler.Amount);
@@ -98,7 +97,7 @@ namespace Tests
 
             Assert.AreEqual(amount + 1, taskScheduler.Amount);
 
-            taskScheduler.LetTheSchedulerFinishCurrentSession();
+
 
             Assert.AreEqual(0, taskScheduler.RunningTasksCount);
         }
