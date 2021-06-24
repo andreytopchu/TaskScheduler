@@ -37,11 +37,11 @@ namespace Tests
         [TestMethod]
         public void TaskSchedulerSuccessWorkTest()
         {
-            var taskScheduler = GetTaskScheduler(25, PrintRandomNumberAndSleepOneSecond);
+            var taskScheduler = GetTaskScheduler(15, PrintRandomNumberAndSleepOneSecond);
 
             var threadsCount = 3;
             taskScheduler.Start(threadsCount);
-
+            taskScheduler.LetTheSchedulerFinishCurrentSession();
             Assert.AreEqual(0, taskScheduler.RunningTasksCount);
         }
 
@@ -55,13 +55,14 @@ namespace Tests
 
             timer.Start();
             taskScheduler.Start(threadsCount);
+            taskScheduler.LetTheSchedulerFinishCurrentSession();
             timer.Stop();
 
             Console.WriteLine("Задачи выполнены за " + timer.ElapsedMilliseconds);
 
             Assert.AreEqual(0, taskScheduler.RunningTasksCount);
             Assert.AreEqual(0, taskScheduler.Amount);
-            Assert.IsTrue(timer.ElapsedMilliseconds<=3000);
+            Assert.IsTrue(timer.ElapsedMilliseconds<=2500);
         }
 
         [TestMethod]
@@ -78,8 +79,9 @@ namespace Tests
 
 
             Assert.AreEqual(0, taskScheduler.RunningTasksCount);
-            Assert.AreEqual(7, taskScheduler.Amount);
+            Assert.AreEqual(amount, taskScheduler.Amount);
         }
+
 
         [TestMethod]
         public void AddingTasksInTaskSchedulerWhenItWorksTest()
@@ -88,18 +90,22 @@ namespace Tests
 
             var threadsCount = 3;
 
+            
             taskScheduler.Start(threadsCount);
-
-            Thread.Sleep(2000);
+            
+            Thread.Sleep(1500);
+            
             var amount = taskScheduler.Amount;
 
             taskScheduler.Add(PrintRandomNumberAndSleepOneSecond);
 
             Assert.AreEqual(amount + 1, taskScheduler.Amount);
 
-
+            Thread.Sleep(5000);
 
             Assert.AreEqual(0, taskScheduler.RunningTasksCount);
         }
+
+        
     }
 }

@@ -7,7 +7,6 @@ namespace Objects
 {
     public class TaskScheduler:IJobExecutor
     {
-        private WaitHandle[] _taskEndedEvents;
 
         private volatile bool _isQueueProcessingComplete;
         private volatile bool _isAllProcessingComplete;
@@ -35,21 +34,25 @@ namespace Objects
                 throw new ArgumentOutOfRangeException(nameof(maxConcurrent));
             }
 
-            //Thread startThread = new Thread(() =>
-            //{
+            Thread startThread = new Thread(start:() =>
+            {
                 _isQueueProcessingComplete = false;
 
                 int freeSpace = maxConcurrent - RunningTasksCount;
                 SendingMaximumTasksForExecution(freeSpace);
 
-                while (!_isQueueProcessingComplete && !WaitHandle.WaitAll(_taskEndedEvents))
+                while (!_isQueueProcessingComplete && !_isAllProcessingComplete)
                 {
                     freeSpace = WaitSomeMillisecondsAndGetFreeSpaceInRunningTasks(RefreshTimeout,
                         maxConcurrent);
                     if (freeSpace > 0)
                         SendingMaximumTasksForExecution(freeSpace);
+
+                    if (_queueIsEmpty && RunningTasksCount == 0)
+                        _isAllProcessingComplete = true;
                 }
-            //});
+            });
+            startThread.Start();
     }
 
         public void Stop()
@@ -71,16 +74,6 @@ namespace Objects
         {
             if (action == null) throw new ArgumentNullException();
 
-            if (Amount == 0)
-                _taskEndedEvents = new WaitHandle[1] {new ManualResetEvent(false)};
-            else
-            {
-                var taskEndedList = _taskEndedEvents;
-                _taskEndedEvents = new WaitHandle[Amount + 1];
-                taskEndedList.CopyTo(_taskEndedEvents,0);
-                _taskEndedEvents[Amount] = new ManualResetEvent(false);
-            }
-
             _queueActions.Enqueue(action);
             _queueIsEmpty = false;
         }
@@ -96,6 +89,13 @@ namespace Objects
             }
         }
 
+        public void LetTheSchedulerFinishCurrentSession()
+        {
+            while (!_isQueueProcessingComplete && !_isAllProcessingComplete)
+            {
+                Thread.Sleep(RefreshTimeout);
+            }
+        }
 
         private void SendingMaximumTasksForExecution(int freeSpace)
         {
@@ -120,7 +120,6 @@ namespace Objects
 
             ThreadPool.QueueUserWorkItem(state =>
             {
-                ManualResetEvent endOfTheTaskEvent = (ManualResetEvent)state;
                 var id = Guid.NewGuid();
                 _queueActions.TryDequeue(out var action);
                 _runningTasks[id] = action;
@@ -132,7 +131,6 @@ namespace Objects
                 finally
                 {
                     _runningTasks.TryRemove(id, out _);
-                    endOfTheTaskEvent.Set();
                 }
             });
         }
